@@ -1,0 +1,16 @@
+version: "3.7"
+
+services:
+  postgres:
+    image: bitnami/postgresql:latest
+    ports:
+      - ${WSRS_DATABASE_PORT:-54321}:5432
+    environment:
+      - POSTGRES_USER=${WSRS_DATABASE_USER}
+      - POSTGRES_PASSWORD=${WSRS_DATABASE_PASSWORD}
+      - POSTGRES_DB=${WSRS_DATABASE_NAME}
+    volumes:
+      - data:/bitnami/postgresql
+
+volumes:
+  data:
