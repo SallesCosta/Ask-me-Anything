@@ -36,8 +36,6 @@ func main() {
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-
-		fmt.Println("2 - Aqui---------..")
 		panic(err)
 	}
 
