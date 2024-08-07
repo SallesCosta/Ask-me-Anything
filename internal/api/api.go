@@ -1,17 +1,20 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
-	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
-	"github.com/jackc/pgx/v5"
 	"log/slog"
 	"net/http"
 	"sync"
 
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5"
+
 	"github.com/go-chi/chi/middleware"
 
 	"context"
+
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
 	"github.com/sallescosta/ama/internal/store/pgstore"
@@ -49,7 +52,7 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: false,
-		MaxAge:           300, // Maximum value not ignored by any of major browsers
+		MaxAge:           300,
 	}))
 
 	r.Get("/subscribe/{room_id}", a.handleSubscribe)
@@ -76,6 +79,29 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	a.r = r
 
 	return a
+}
+
+type Message struct {
+	Kind   string `json:"kind"`
+	Value  any    `json:"value"`
+	RoomID string `json:"-"`
+}
+
+func (h apiHandler) notifyClients(msg Message) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	subscribers, ok := h.subscribers[msg.RoomID]
+	if !ok || len(subscribers) == 0 {
+		return
+	}
+
+	for conn, cancel := range subscribers {
+		if err := conn.WriteJSON(msg); err != nil {
+			slog.Error("fail to send message to client", "error", err)
+			cancel()
+		}
+	}
 }
 
 func (h apiHandler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +137,7 @@ func (h apiHandler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.subscribers[rawRoomId]; !ok {
 		h.subscribers[rawRoomId] = make(map[*websocket.Conn]context.CancelFunc)
 	}
+	slog.Info("new client connected", "room_id", rawRoomId, "client_ip", r.RemoteAddr)
 	h.subscribers[rawRoomId][c] = cancel
 	h.mu.Unlock()
 
@@ -121,7 +148,35 @@ func (h apiHandler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 }
 
-func (h apiHandler) handleCreateRoom(w http.ResponseWriter, r *http.Request)             {}
+func (h apiHandler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
+	type _body struct {
+		Theme string `json:"theme"`
+	}
+	var body _body
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	roomID, err := h.q.InsertRoom(r.Context(), body.Theme) // 30min.
+	if err != nil {
+		slog.Error("failed to insert room", "error", err)
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		return
+	}
+
+	type response struct {
+		ID string `json:"id"`
+	}
+
+	data, _ := json.Marshal(response{ID: roomID.String()})
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+
+}
+
 func (h apiHandler) handleGetRooms(w http.ResponseWriter, r *http.Request)               {}
 func (h apiHandler) handleCreateRoomMessages(w http.ResponseWriter, r *http.Request)     {}
 func (h apiHandler) handleGetRoomMessages(w http.ResponseWriter, r *http.Request)        {}

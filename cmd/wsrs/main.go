@@ -11,16 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 )
 
 func main() {
-	envPath, err := filepath.Abs("../../.env")
-	if err != nil {
-		panic(err)
-	}
-
-	if err := godotenv.Load(envPath); err != nil {
+	if err := godotenv.Load(); err != nil {
 		panic(err)
 	}
 
