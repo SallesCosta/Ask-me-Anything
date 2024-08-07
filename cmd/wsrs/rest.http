@@ -6,3 +6,12 @@ Content-Type: application/json
 }
 
 ###
+#create new message
+
+POST http://localhost:8080/api/rooms/04cbed2d-69cb-431a-ab79-30bc6971ceea/messages HTTP/1.1
+Content-Type: application/json
+
+{
+  "message": "Mensagem criada.."
+}
+
